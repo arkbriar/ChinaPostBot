@@ -122,6 +122,8 @@ public class Controller {
             }));
         try {
             File outputFile = futureTask.get();
+            showAlert(Alert.AlertType.INFORMATION, "执行成功!", "查询已完成!",
+                "文件存储在: " + outputFile.getAbsolutePath());
         } catch (Exception e) {
             showExceptionDialog(e);
         }

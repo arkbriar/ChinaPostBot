@@ -1,17 +1,22 @@
 package task;
 
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbookType;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.logging.Logger;
 import model.Post;
 import model.PostRoute;
 
@@ -19,6 +24,8 @@ import model.PostRoute;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class QueryTask implements Callable<File> {
+    private final Logger logger = Logger.getLogger(QueryTask.class.getName());
+
     private static final int POST_QUERY_LIMIT = 40;
 
     private final String name;
@@ -33,10 +40,26 @@ public class QueryTask implements Callable<File> {
         this.updater = updater;
     }
 
-    private List<String> loadFromFile(String filePath) {
-        // TODO
-        // Workbook workbook = WorkbookFactory
-        return new ArrayList<>();
+    private List<String> loadFromFile(String filePath) throws IOException, InvalidFormatException {
+        Workbook workbook = WorkbookFactory.create(new File(filePath));
+        Sheet sheet = workbook.getSheetAt(0);
+        List<String> ids = new ArrayList<>(sheet.getPhysicalNumberOfRows());
+        for (int i = sheet.getFirstRowNum(); i < sheet.getLastRowNum(); ++i) {
+            if (sheet.getRow(i) == null) {
+                continue;
+            }
+            Row row = sheet.getRow(i);
+            if (row.getCell(0) == null) {
+                continue;
+            }
+
+            String id = row.getCell(0).getStringCellValue();
+            if (id == null || id.isEmpty()) {
+                continue;
+            }
+            ids.add(id);
+        }
+        return ids;
     }
 
     private List<Post> queryPosts(List<String> ids) {
@@ -74,8 +97,53 @@ public class QueryTask implements Callable<File> {
         return workbook;
     }
 
-    private void writeToTable(Workbook workbook, Post post, List<PostRoute> postRoutes) {
+    private String getLastArrival(List<PostRoute> postRoutes) {
         // TODO
+        return "";
+    }
+
+    private String getPersonSigned(List<PostRoute> postRoutes) {
+        // TODO
+        return "";
+    }
+
+    private Calendar getCalendar() {
+        // TODO
+        return Calendar.getInstance();
+    }
+
+    private String getSimpleDateString(Calendar calendar) {
+        return calendar.get(Calendar.MONTH) + "/" + calendar.get(Calendar.DATE);
+    }
+
+    private void writeToTable(Workbook workbook, Post post, List<PostRoute> postRoutes) {
+        if (post == null || postRoutes == null || postRoutes.isEmpty()) {
+            // ignore invalid cases
+            return;
+        }
+
+        if (postRoutes.get(postRoutes.size() - 1).getType() != PostRoute.RouteType.RECEIPT) {
+            logger.info(String.format("Ignore unsuccessful delivery %s!", post.getId()));
+            return;
+        }
+
+        final Sheet sheet = workbook.getSheetAt(0);
+        final Row row = sheet.getRow(sheet.getLastRowNum() + 1);
+        final Calendar calendar = getCalendar();
+        row.createCell(0).setCellValue(name);
+        row.createCell(1).setCellValue(calendar);
+        row.createCell(2).setCellValue(post.getReceiveTime());
+        row.createCell(3).setCellValue("*");
+        row.createCell(4).setCellValue(post.getId());
+        row.createCell(5).setCellValue("*");
+        row.createCell(6).setCellValue("*");
+        row.createCell(7).setCellValue("*");
+        row.createCell(8).setCellValue(post.getNowLocation());
+        row.createCell(9).setCellValue("信息未更新，实际已妥投");
+        row.createCell(10).setCellValue(
+            getLastArrival(postRoutes) + " 已妥投，签收人: " + getPersonSigned(postRoutes));
+        row.createCell(11).setCellValue(getSimpleDateString(calendar) + "，已签收");
+        row.createCell(12).setCellValue("已妥投");
     }
 
     @Override
