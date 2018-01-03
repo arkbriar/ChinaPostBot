@@ -30,8 +30,6 @@ repositories {
 
 apply plugin: 'javafx-gradle-plugin'
 
-
-
 jfx {
     // minimal requirement for jfxJar-task
     mainClass = 'Main'
