@@ -1,6 +1,7 @@
 package model;
 
 import com.fasterxml.jackson.annotation.JsonEnumDefaultValue;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Date;
@@ -8,6 +9,7 @@ import java.util.Date;
 /**
  * Created by Shunjie Ding on 31/12/2017.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class PostRoute {
     public enum RouteType {
         // FIXME There must be more types

@@ -1,5 +1,6 @@
 package model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.http.NameValuePair;
 import org.apache.http.message.BasicNameValuePair;
@@ -11,6 +12,7 @@ import java.util.List;
 /**
  * Created by Shunjie Ding on 31/12/2017.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class Post {
     @JsonProperty("V_YJHM")
     private String id;

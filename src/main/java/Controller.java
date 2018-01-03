@@ -3,8 +3,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Paths;
 import java.util.Optional;
-import java.util.concurrent.FutureTask;
 import java.util.logging.Logger;
+import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
@@ -12,6 +12,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
@@ -19,7 +20,6 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.stage.FileChooser;
-import task.ProgressUpdater;
 import task.QueryTask;
 
 /**
@@ -40,6 +40,9 @@ public class Controller {
     @FXML
     public Button executeButton;
 
+    @FXML
+    public ProgressIndicator progressIndicator;
+
     private Optional<ButtonType> showAlert(
         Alert.AlertType type, String title, String header, String message) {
         Alert alert = new Alert(type);
@@ -49,7 +52,7 @@ public class Controller {
         return alert.showAndWait();
     }
 
-    private void showExceptionDialog(Exception e) {
+    private void showExceptionDialog(Throwable e) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle("Exception Dialog");
         alert.setHeaderText("Exception Details!");
@@ -83,10 +86,29 @@ public class Controller {
         alert.showAndWait();
     }
 
+    private <T> void startTask(Task<T> task) {
+        Thread thread = new Thread(task);
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    protected void reset() {
+        executeButton.setDisable(false);
+        progressBar.setProgress(0.0);
+        progressIndicator.setVisible(false);
+    }
+
     @FXML
     protected void handleSubmitButtonAction(ActionEvent event) {
         if (nameField.getText().isEmpty()) {
             showAlert(Alert.AlertType.WARNING, "姓名不能为空!", "姓名不能为空！", null);
+            return;
+        }
+
+        String filePath = fileLocation.getText();
+        if (!filePath.endsWith(".xls") && !filePath.endsWith(".xlsx")) {
+            showAlert(Alert.AlertType.WARNING, "文件格式错误!",
+                "文件格式错误，请打开 .xls 或 .xlsx 文件!", null);
             return;
         }
 
@@ -98,37 +120,22 @@ public class Controller {
             return;
         }
 
-        String filePath = fileLocation.getText();
-        if (!filePath.endsWith(".xls") || !filePath.endsWith(".xlsx")) {
-            showAlert(Alert.AlertType.WARNING, "文件格式错误!",
-                "文件格式错误，请打开 .xls 或 .xlsx 文件!", null);
-            return;
-        }
-
-        // Disable button and execute the query task.
+        reset();
         executeButton.setDisable(true);
 
-        FutureTask<File> futureTask =
-            new FutureTask<>(new QueryTask(name, filePath, new ProgressUpdater() {
-                @Override
-                public double get() {
-                    return progressBar.getProgress();
-                }
+        Task<File> queryTask = new QueryTask(name, filePath);
+        queryTask.setOnCancelled(e -> reset());
+        queryTask.setOnSucceeded(e -> {
+            executeButton.setDisable(false);
+            progressIndicator.setVisible(true);
+        });
+        queryTask.setOnFailed(e -> {
+            showExceptionDialog(e.getSource().getException());
+            reset();
+        });
 
-                @Override
-                public void update(double value) {
-                    progressBar.setProgress(value);
-                }
-            }));
-        try {
-            File outputFile = futureTask.get();
-            showAlert(Alert.AlertType.INFORMATION, "执行成功!", "查询已完成!",
-                "文件存储在: " + outputFile.getAbsolutePath());
-        } catch (Exception e) {
-            showExceptionDialog(e);
-        }
-
-        executeButton.setDisable(false);
+        progressBar.progressProperty().bind(queryTask.progressProperty());
+        startTask(queryTask);
     }
 
     @FXML
