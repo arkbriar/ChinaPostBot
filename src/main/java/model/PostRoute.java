@@ -18,6 +18,8 @@ public final class PostRoute {
         @JsonProperty("DD") ARRIVAL,
         @JsonProperty("APTD") DELIVERY,
         @JsonProperty("TT") RECEIPT,
+        @JsonProperty("Z") TRANSFER,
+        @JsonProperty("ST") DELIVERY_SCHEDULED,
         @JsonEnumDefaultValue UNRECOGNIZED
     }
 
