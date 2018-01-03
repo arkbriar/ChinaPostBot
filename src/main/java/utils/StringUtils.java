@@ -7,6 +7,9 @@ import java.io.UnsupportedEncodingException;
  */
 public final class StringUtils {
     public static String convertToUTF8(String str) {
+        if (str == null) {
+            return null;
+        }
         try {
             return new String(str.getBytes(), "UTF-8");
         } catch (UnsupportedEncodingException e) {

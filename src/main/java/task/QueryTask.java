@@ -401,7 +401,8 @@ public class QueryTask extends Task<File> {
 
         List<Post> posts = new ArrayList<>(ids.size());
 
-        final ExecutorService executorService = Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
+        final ExecutorService executorService =
+            Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
             int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
             List<String> subIds = ids.subList(i, i + batchSize);
