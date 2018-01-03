@@ -13,12 +13,8 @@ buildscript {
 }
 apply plugin: 'java'
 
-import org.apache.tools.ant.taskdefs.condition.Os
-
 tasks.withType(JavaCompile) {
-    if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-        options.encoding = 'UTF-8'
-    }
+    options.encoding = 'UTF-8'
 }
 
 sourceCompatibility = 1.8
