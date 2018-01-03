@@ -61,6 +61,8 @@ public class QueryTask extends Task<File> {
         Workbook workbook = WorkbookFactory.create(new File(filePath));
         Sheet sheet = workbook.getSheetAt(0);
         List<String> ids = new ArrayList<>(sheet.getPhysicalNumberOfRows());
+
+        final Pattern pattern = Pattern.compile("\\d{13}");
         for (int i = sheet.getFirstRowNum(); i < sheet.getLastRowNum() + 1; ++i) {
             if (sheet.getRow(i) == null) {
                 continue;
@@ -71,7 +73,8 @@ public class QueryTask extends Task<File> {
             }
 
             String id = row.getCell(0).getStringCellValue();
-            if (id == null || id.isEmpty()) {
+            // ignore those null, empty and not match
+            if (id == null || id.isEmpty() || !pattern.matcher(id).matches()) {
                 continue;
             }
             ids.add(id);
@@ -195,6 +198,27 @@ public class QueryTask extends Task<File> {
         return Paths.get(file.getParent(), filename.substring(0, idx) + "_结果.xlsx").toString();
     }
 
+    private Font getDefaultFont(Workbook workbook) {
+        Font font = workbook.createFont();
+        String osName = System.getProperty("os.name");
+        switch (osName) {
+            case "Windows":
+                font.setFontName("楷体");
+                break;
+            default:
+                font.setFontName("KaiTi");
+                break;
+        }
+        font.setFontHeightInPoints((short) 10);
+        return font;
+    }
+
+    private CellStyle getDefaultStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        style.setFont(getDefaultFont(workbook));
+        return style;
+    }
+
     private Workbook newWorkbook() {
         Workbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
         Sheet mainSheet = workbook.createSheet("主动");
@@ -203,15 +227,17 @@ public class QueryTask extends Task<File> {
             "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"};
         Row titleRow = mainSheet.createRow(0);
 
-        Font font = workbook.createFont();
-        font.setFontName("STKaiTi");
-        font.setFontHeight((short) 10);
-        CellStyle style = workbook.createCellStyle();
-        style.setFont(font);
-
         for (int i = 0; i < columns.length; ++i) {
-            workbook.getSheetAt(0).setDefaultColumnStyle(i, style);
             titleRow.createCell(i).setCellValue(columns[i]);
+        }
+
+        // Set bold
+        CellStyle style = workbook.createCellStyle();
+        Font font = getDefaultFont(workbook);
+        font.setBold(true);
+        style.setFont(font);
+        for (int i = 0; i < columns.length; ++i) {
+            titleRow.getCell(i).setCellStyle(style);
         }
 
         return workbook;
@@ -219,17 +245,17 @@ public class QueryTask extends Task<File> {
 
     private String getLastArrival(List<PostRoute> postRoutes) {
         for (int i = postRoutes.size() - 1; i >= 0; --i) {
-            if (postRoutes.get(i).getType() == PostRoute.RouteType.ARRIVAL) {
-                String status = postRoutes.get(i).getStatus();
-                Pattern pattern = Pattern.compile(".*【<a>(\\S+)</a>】.*");
-                Matcher matcher = pattern.matcher(status);
+            // There are cases that have no ARRIVAL, so just using regex.
+            String status = postRoutes.get(i).getStatus();
+            Pattern pattern = Pattern.compile(".*【<a>(\\S+)</a>】.*");
+            Matcher matcher = pattern.matcher(status);
 
-                if (!matcher.find()) {
-                    break;
-                }
-                return String.format("【%s】", matcher.group(1));
+            if (!matcher.find()) {
+                break;
             }
+            return String.format("【%s】", matcher.group(1));
         }
+
         return "【未知】";
     }
 
@@ -248,13 +274,18 @@ public class QueryTask extends Task<File> {
 
         String name = "";
         // Case 1
-        name = getPersonSignedWithRegex("已签收,([^ ;,，；]+) 代收.*", last.getStatus());
+        name = getPersonSignedWithRegex("已签收,([^ ;,，；]+).*代收.*", last.getStatus());
         if (!name.isEmpty()) {
             return name;
         }
 
         // Case 2
         name = getPersonSignedWithRegex("已签收,代投点：([^ ;,，；]+).*", last.getStatus());
+        if (!name.isEmpty()) {
+            return name;
+        }
+
+        name = getPersonSignedWithRegex("已签收,包裹柜：([^ ;,，；]+)收.*", last.getStatus());
         if (!name.isEmpty()) {
             return name;
         }
@@ -301,43 +332,50 @@ public class QueryTask extends Task<File> {
         final Row row = sheet.createRow(sheet.getLastRowNum() + 1);
         final Calendar calendar = getCalendar();
         row.createCell(0).setCellValue(name);
-
-        CellStyle cellStyleDate = workbook.createCellStyle();
-        cellStyleDate.setDataFormat(
-            workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
-
         row.createCell(1).setCellValue(calendar);
-        row.getCell(1).setCellStyle(cellStyleDate);
         row.createCell(2).setCellValue(getCalendar(post.getReceiveTime()));
-        row.getCell(2).setCellStyle(cellStyleDate);
-
         row.createCell(3).setCellValue("*");
         row.createCell(4).setCellValue(post.getId());
         row.createCell(5).setCellValue("*");
         row.createCell(6).setCellValue("*");
-        row.createCell(7).setCellValue("*");
-        row.createCell(8).setCellValue(post.getNowLocation());
-        row.createCell(9).setCellValue("信息未更新，实际已妥投");
+        row.createCell(7).setCellValue(post.getNowLocation());
+        row.createCell(8).setCellValue("信息未更新，实际已妥投");
 
         String signedWho = getPersonSigned(postRoutes);
-        if (signedWho.isEmpty()) {
-            row.createCell(10).setCellValue(getLastArrival(postRoutes) + " 已妥投");
-        } else {
-            row.createCell(10).setCellValue(
-                getLastArrival(postRoutes) + " 已妥投，签收人: " + signedWho);
+        String deliveryInfo = getLastArrival(postRoutes) + " 已妥投";
+        if (!signedWho.isEmpty()) {
+            deliveryInfo += "，签收人: " + signedWho;
         }
+        if (post.getStatus().contains("704")) {
+            deliveryInfo += " 704【转】";
+        }
+        row.createCell(9).setCellValue(deliveryInfo);
 
-        row.createCell(11).setCellValue(getSimpleDateString(calendar) + "，已签收");
-        row.createCell(12).setCellValue("已妥投");
+        row.createCell(10).setCellValue(getSimpleDateString(calendar) + "，已签收");
+        row.createCell(11).setCellValue("已妥投");
+
+        // Format cell
+        for (int i = 0; i < 12; ++i) {
+            CellStyle cellStyle = getDefaultStyle(workbook);
+            if (i == 1 || i == 2) {
+                cellStyle.setDataFormat(
+                    workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+            }
+            row.getCell(i).setCellStyle(cellStyle);
+        }
     }
 
     @Override
     protected File call() throws Exception {
         // Load and remove duplicates
         List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            throw new Exception("文件中不存在运单号！");
+        }
+
+        updateProgress(0, ids.size());
 
         Workbook workbook = newWorkbook();
-
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
             int batchSize = Math.min(i + POST_QUERY_LIMIT, ids.size());
             List<Post> posts = queryPosts(ids.subList(i, batchSize));

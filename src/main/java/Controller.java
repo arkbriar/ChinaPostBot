@@ -43,6 +43,9 @@ public class Controller {
     @FXML
     public ProgressIndicator progressIndicator;
 
+    @FXML
+    public Button cancelButton;
+
     private Optional<ButtonType> showAlert(
         Alert.AlertType type, String title, String header, String message) {
         Alert alert = new Alert(type);
@@ -87,6 +90,7 @@ public class Controller {
     }
 
     private <T> void startTask(Task<T> task) {
+        currentTask = task;
         Thread thread = new Thread(task);
         thread.setDaemon(true);
         thread.start();
@@ -94,9 +98,13 @@ public class Controller {
 
     protected void reset() {
         executeButton.setDisable(false);
+        progressBar.progressProperty().unbind();
         progressBar.setProgress(0.0);
         progressIndicator.setVisible(false);
+        cancelButton.setDisable(true);
     }
+
+    private Task currentTask;
 
     @FXML
     protected void handleSubmitButtonAction(ActionEvent event) {
@@ -114,7 +122,8 @@ public class Controller {
 
         String name = nameField.getText();
         Optional<ButtonType> result = showAlert(Alert.AlertType.CONFIRMATION, "确认执行?",
-            String.format("确认使用姓名: %s 开始自动查询？", name), null);
+            String.format("确认使用姓名: %s 开始自动查询？", name),
+            "邮政运单号文件为: " + filePath);
         if (result.isPresent() && result.get() != ButtonType.OK) {
             // Exit execution on cancel or close.
             return;
@@ -122,6 +131,7 @@ public class Controller {
 
         reset();
         executeButton.setDisable(true);
+        cancelButton.setDisable(false);
 
         Task<File> queryTask = new QueryTask(name, filePath);
         queryTask.setOnCancelled(e -> reset());
@@ -136,6 +146,15 @@ public class Controller {
 
         progressBar.progressProperty().bind(queryTask.progressProperty());
         startTask(queryTask);
+    }
+
+    @FXML
+    public void handleCancelButtonAction(ActionEvent actionEvent) {
+        if (currentTask == null || currentTask.isDone()) {
+            return;
+        }
+        currentTask.cancel();
+        reset();
     }
 
     @FXML
