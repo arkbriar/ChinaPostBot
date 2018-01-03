@@ -46,7 +46,6 @@ import java.util.stream.Collectors;
 import javafx.concurrent.Task;
 import model.Post;
 import model.PostRoute;
-import utils.StringUtils;
 
 /**
  * Created by Shunjie Ding on 31/12/2017.
@@ -212,7 +211,7 @@ public class QueryTask extends Task<File> {
         String osName = System.getProperty("os.name");
         switch (osName) {
             case "Windows":
-                font.setFontName(StringUtils.convertToGBKIfOSisWindows("楷体"));
+                font.setFontName("楷体");
                 break;
             default:
                 font.setFontName("KaiTi");
@@ -369,19 +368,19 @@ public class QueryTask extends Task<File> {
             Cell cell = row.getCell(i);
             CellStyle cellStyle = getDefaultStyle(workbook);
             if (i == 1 || i == 2) {
-                cellStyle.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat(
-                    StringUtils.convertToGBKIfOSisWindows("mm月dd日")));
+                cellStyle.setDataFormat(
+                    workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
             }
             cell.setCellStyle(cellStyle);
 
             if (cell.getCellTypeEnum() == CellType.STRING) {
-                cell.setCellValue(StringUtils.convertToGBKIfOSisWindows(cell.getStringCellValue()));
+                cell.setCellValue(cell.getStringCellValue());
             }
         }
     }
 
     private List<Post> getPosts(List<String> ids) {
-        updateMessage(StringUtils.convertToGBKIfOSisWindows("查询运单号"));
+        updateMessage("查询运单号");
 
         List<Post> posts = new ArrayList<>(ids.size());
 
@@ -397,7 +396,7 @@ public class QueryTask extends Task<File> {
     }
 
     private List<Post> getPostConcurrently(List<String> ids) throws InterruptedException {
-        updateMessage(StringUtils.convertToGBKIfOSisWindows("查询运单号"));
+        updateMessage("查询运单号");
 
         List<Post> posts = new ArrayList<>(ids.size());
 
@@ -423,7 +422,7 @@ public class QueryTask extends Task<File> {
 
     private File queryRoutesAndWriteToExcelConcurrently(List<Post> posts)
         throws IOException, InterruptedException {
-        updateMessage(StringUtils.convertToGBKIfOSisWindows("查询运单路线"));
+        updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
 
@@ -454,7 +453,7 @@ public class QueryTask extends Task<File> {
     }
 
     private File queryRoutesAndWriteToExcel(List<Post> posts) throws IOException {
-        updateMessage(StringUtils.convertToGBKIfOSisWindows("查询运单路线"));
+        updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
 
@@ -483,7 +482,7 @@ public class QueryTask extends Task<File> {
         // Load and remove duplicates
         List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
         if (ids.isEmpty()) {
-            throw new Exception(StringUtils.convertToGBKIfOSisWindows("文件中不存在运单号！"));
+            throw new Exception("文件中不存在运单号！");
         }
 
         updateProgress(0, ids.size());

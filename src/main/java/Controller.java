@@ -21,7 +21,6 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.stage.FileChooser;
 import task.QueryTask;
-import utils.StringUtils;
 
 /**
  * Created by Shunjie Ding on 31/12/2017.
@@ -51,9 +50,9 @@ public class Controller {
     private Optional<ButtonType> showAlert(
         Alert.AlertType type, String title, String header, String message) {
         Alert alert = new Alert(type);
-        alert.setTitle(StringUtils.convertToGBKIfOSisWindows(title));
-        alert.setHeaderText(StringUtils.convertToGBKIfOSisWindows(header));
-        alert.setContentText(StringUtils.convertToGBKIfOSisWindows(message));
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+        alert.setContentText(message);
         return alert.showAndWait();
     }
 
@@ -139,8 +138,8 @@ public class Controller {
             File file = (File) (e.getSource().getValue());
             executeButton.setDisable(false);
             progressIndicator.setVisible(true);
-            showAlert(Alert.AlertType.INFORMATION, StringUtils.convertToGBKIfOSisWindows("自动查询成功！"),
-                StringUtils.convertToGBKIfOSisWindows("查询结果存储在: " + file.getAbsolutePath()), null);
+            showAlert(Alert.AlertType.INFORMATION, "自动查询成功！",
+                "查询结果存储在: " + file.getAbsolutePath(), null);
         });
         queryTask.setOnFailed(e -> {
             showExceptionDialog(e.getSource().getException());
@@ -164,7 +163,7 @@ public class Controller {
     public void handleFileLocationTextFieldClicked(MouseEvent mouseEvent) {
         if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
             FileChooser fileChooser = new FileChooser();
-            fileChooser.setTitle(StringUtils.convertToGBKIfOSisWindows("选择运单号文件"));
+            fileChooser.setTitle("选择运单号文件");
             fileChooser.setSelectedExtensionFilter(new FileChooser.ExtensionFilter("xls", "xlsx"));
             if (!fileLocation.getText().isEmpty()) {
                 String filePath = fileLocation.getText();

@@ -13,6 +13,14 @@ buildscript {
 }
 apply plugin: 'java'
 
+import org.apache.tools.ant.taskdefs.condition.Os
+
+tasks.withType(JavaCompile) {
+    if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+        options.encoding = 'GBK'
+    }
+}
+
 sourceCompatibility = 1.8
 
 repositories {
@@ -21,6 +29,8 @@ repositories {
 }
 
 apply plugin: 'javafx-gradle-plugin'
+
+
 
 jfx {
     // minimal requirement for jfxJar-task
