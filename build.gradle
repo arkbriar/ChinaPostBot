@@ -17,7 +17,7 @@ import org.apache.tools.ant.taskdefs.condition.Os
 
 tasks.withType(JavaCompile) {
     if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-        options.encoding = 'GBK'
+        options.encoding = 'UTF-8'
     }
 }
 
