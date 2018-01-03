@@ -1,5 +1,6 @@
 package task;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.HttpEntity;
@@ -116,6 +117,13 @@ public class QueryTask extends Task<File> {
 
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
+    private ObjectMapper newObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.setDateFormat(dateFormat);
+        mapper.enable(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE);
+        return mapper;
+    }
+
     private List<Post> queryPosts(List<String> ids) {
         List<NameValuePair> params = getPostQueryParams(ids);
 
@@ -134,8 +142,7 @@ public class QueryTask extends Task<File> {
                     continue;
                 }
 
-                ObjectMapper objectMapper = new ObjectMapper();
-                objectMapper.setDateFormat(dateFormat);
+                ObjectMapper objectMapper = newObjectMapper();
                 JsonNode root = objectMapper.readTree(httpEntity.getContent());
                 List<Post> posts =
                     Arrays.asList(objectMapper.treeToValue(root.get("rdata"), Post[].class));
@@ -172,8 +179,7 @@ public class QueryTask extends Task<File> {
                     continue;
                 }
 
-                ObjectMapper objectMapper = new ObjectMapper();
-                objectMapper.setDateFormat(dateFormat);
+                ObjectMapper objectMapper = newObjectMapper();
                 JsonNode root = objectMapper.readTree(httpEntity.getContent());
 
                 // Return route list on success
