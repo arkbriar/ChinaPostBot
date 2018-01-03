@@ -256,10 +256,9 @@ public class QueryTask extends Task<File> {
             Pattern pattern = Pattern.compile(".*【<a>(\\S+)</a>】.*");
             Matcher matcher = pattern.matcher(status);
 
-            if (!matcher.find()) {
-                break;
+            if (matcher.find()) {
+                return String.format("【%s】", matcher.group(1));
             }
-            return String.format("【%s】", matcher.group(1));
         }
 
         return "【未知】";
