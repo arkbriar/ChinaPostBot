@@ -13,7 +13,9 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 import javafx.concurrent.Task;
 import model.Post;
 import model.PostRoute;
+import utils.StringUtils;
 
 /**
  * Created by Shunjie Ding on 31/12/2017.
@@ -209,7 +212,7 @@ public class QueryTask extends Task<File> {
         String osName = System.getProperty("os.name");
         switch (osName) {
             case "Windows":
-                font.setFontName("楷体");
+                font.setFontName(StringUtils.convertToUTF8("楷体"));
                 break;
             default:
                 font.setFontName("KaiTi");
@@ -361,37 +364,57 @@ public class QueryTask extends Task<File> {
 
         // Format cell
         for (int i = 0; i < 12; ++i) {
+            Cell cell = row.getCell(i);
             CellStyle cellStyle = getDefaultStyle(workbook);
             if (i == 1 || i == 2) {
-                cellStyle.setDataFormat(
-                    workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+                cellStyle.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat(
+                    StringUtils.convertToUTF8("mm月dd日")));
             }
-            row.getCell(i).setCellStyle(cellStyle);
+            cell.setCellStyle(cellStyle);
+
+            if (cell.getCellTypeEnum() == CellType.STRING) {
+                cell.setCellValue(StringUtils.convertToUTF8(cell.getStringCellValue()));
+            }
         }
     }
 
-    @Override
-    protected File call() throws Exception {
-        // Load and remove duplicates
-        List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
-        if (ids.isEmpty()) {
-            throw new Exception("文件中不存在运单号！");
-        }
+    private List<Post> getPosts(List<String> ids) {
+        updateMessage(StringUtils.convertToUTF8("查询运单号"));
 
-        updateProgress(0, ids.size());
+        List<Post> posts = new ArrayList<>(ids.size());
 
-        Workbook workbook = newWorkbook();
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
             int batchSize = Math.min(i + POST_QUERY_LIMIT, ids.size());
-            List<Post> posts = queryPosts(ids.subList(i, batchSize));
+            posts.addAll(queryPosts(ids.subList(i, Math.min(i + POST_QUERY_LIMIT, ids.size()))));
+            updateProgress(i + batchSize + 1, ids.size());
+        }
 
-            for (int j = 0; j < posts.size(); ++j) {
-                Post post = posts.get(j);
-                List<PostRoute> routes = queryPostRoutes(post);
-                writeToTable(workbook, post, routes);
+        assert posts.size() == ids.size();
 
-                updateProgress((double) i + j + 1, (double) (ids.size()));
-            }
+        return posts;
+    }
+
+    private List<Post> getPostConcurrent(List<String> ids) {
+        updateMessage(StringUtils.convertToUTF8("查询运单号"));
+
+        List<Post> posts = new ArrayList<>(ids.size());
+
+        // TODO
+
+        return posts;
+    }
+
+    private File queryRoutesAndWriteToExcel(List<Post> posts) throws IOException {
+        updateMessage(StringUtils.convertToUTF8("查询运单路线"));
+
+        Workbook workbook = newWorkbook();
+
+        for (int i = 0; i < posts.size(); ++i) {
+            Post post = posts.get(i);
+            List<PostRoute> routes = queryPostRoutes(post);
+            writeToTable(workbook, post, routes);
+
+            updateProgress(i + 1, posts.size());
         }
 
         // Format workbook
@@ -404,5 +427,22 @@ public class QueryTask extends Task<File> {
         workbook.write(new FileOutputStream(output));
 
         return output;
+    }
+
+    @Override
+    protected File call() throws Exception {
+        // Load and remove duplicates
+        List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            throw new Exception(StringUtils.convertToUTF8("文件中不存在运单号！"));
+        }
+
+        updateProgress(0, ids.size());
+
+        List<Post> posts = getPosts(ids);
+
+        updateProgress(0, ids.size());
+
+        return queryRoutesAndWriteToExcel(posts);
     }
 }
