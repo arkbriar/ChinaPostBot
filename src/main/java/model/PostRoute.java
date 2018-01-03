@@ -11,24 +11,10 @@ import java.util.Date;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class PostRoute {
-    public enum RouteType {
-        // FIXME There must be more types
-        @JsonProperty("SJ") ACCEPT,
-        @JsonProperty("FY") TRANSPORT,
-        @JsonProperty("DD") ARRIVAL,
-        @JsonProperty("APTD") DELIVERY,
-        @JsonProperty("TT") RECEIPT,
-        @JsonProperty("Z") TRANSFER,
-        @JsonProperty("ST") DELIVERY_SCHEDULED,
-        @JsonEnumDefaultValue UNRECOGNIZED
-    }
-
     @JsonProperty("V_HJDM")
     private RouteType type;
-
     @JsonProperty("D_SJSJ")
     private Date time;
-
     @JsonProperty("V_ZT")
     private String status;
 
@@ -44,5 +30,17 @@ public final class PostRoute {
 
     public String getStatus() {
         return status;
+    }
+
+    public enum RouteType {
+        // FIXME There must be more types
+        @JsonProperty("SJ") ACCEPT,
+        @JsonProperty("FY") TRANSPORT,
+        @JsonProperty("DD") ARRIVAL,
+        @JsonProperty("APTD") DELIVERY,
+        @JsonProperty("TT") RECEIPT,
+        @JsonProperty("Z") TRANSFER,
+        @JsonProperty("ST") DELIVERY_SCHEDULED,
+        @JsonEnumDefaultValue UNRECOGNIZED
     }
 }

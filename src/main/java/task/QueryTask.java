@@ -35,6 +35,10 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,13 +52,13 @@ import utils.StringUtils;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class QueryTask extends Task<File> {
-    private final Logger logger = Logger.getLogger(QueryTask.class.getName());
-
     private static final int POST_QUERY_LIMIT = 40;
-
+    private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final int MAX_CONCURRENT_THREADS = 16;
+    private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
-
     private final String filePath;
+    private HttpClient httpClient = HttpClients.createDefault();
 
     public QueryTask(String name, String filePath) {
         this.name = name;
@@ -86,8 +90,6 @@ public class QueryTask extends Task<File> {
         return ids;
     }
 
-    private HttpClient httpClient = HttpClients.createDefault();
-
     private HttpResponse doPost(String url, List<NameValuePair> params) throws IOException {
         HttpPost httpPost = new HttpPost(url);
         // Set headers
@@ -117,8 +119,6 @@ public class QueryTask extends Task<File> {
         params.add(new BasicNameValuePair("cgsyj", "null"));
         return params;
     }
-
-    private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     private ObjectMapper newObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
@@ -232,8 +232,10 @@ public class QueryTask extends Task<File> {
         Workbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
         Sheet mainSheet = workbook.createSheet("主动");
 
-        final String[] columns = {"售后人员", "查询日期", "收寄日期", "客户", "运单号", "收件人",
-            "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"};
+        final String[] columns = {
+            "售后人员", "查询日期", "收寄日期", "客户", "运单号", "收件人",
+            "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"
+        };
         Row titleRow = mainSheet.createRow(0);
 
         for (int i = 0; i < columns.length; ++i) {
@@ -384,9 +386,9 @@ public class QueryTask extends Task<File> {
         List<Post> posts = new ArrayList<>(ids.size());
 
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
-            int batchSize = Math.min(i + POST_QUERY_LIMIT, ids.size());
-            posts.addAll(queryPosts(ids.subList(i, Math.min(i + POST_QUERY_LIMIT, ids.size()))));
-            updateProgress(i + batchSize + 1, ids.size());
+            int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
+            posts.addAll(queryPosts(ids.subList(i, i + batchSize)));
+            updateProgress(i + batchSize, ids.size());
         }
 
         assert posts.size() == ids.size();
@@ -394,14 +396,60 @@ public class QueryTask extends Task<File> {
         return posts;
     }
 
-    private List<Post> getPostConcurrent(List<String> ids) {
+    private List<Post> getPostConcurrently(List<String> ids) throws InterruptedException {
         updateMessage(StringUtils.convertToUTF8("查询运单号"));
 
         List<Post> posts = new ArrayList<>(ids.size());
 
-        // TODO
+        final ExecutorService executorService = Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
+        for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
+            int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
+            List<String> subIds = ids.subList(i, i + batchSize);
+            executorService.submit(() -> {
+                synchronized (posts) {
+                    posts.addAll(queryPosts(subIds));
+                    updateProgress(posts.size(), ids.size());
+                }
+            });
+        }
 
+        executorService.shutdown();
+        executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
+        assert ids.size() == posts.size();
         return posts;
+    }
+
+    private File queryRoutesAndWriteToExcelConcurrently(List<Post> posts)
+        throws IOException, InterruptedException {
+        updateMessage(StringUtils.convertToUTF8("查询运单路线"));
+
+        Workbook workbook = newWorkbook();
+
+        final ExecutorService executorService = Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
+        AtomicInteger count = new AtomicInteger();
+        for (Post post : posts) {
+            executorService.submit(() -> {
+                List<PostRoute> routes = queryPostRoutes(post);
+                synchronized (workbook) {
+                    writeToTable(workbook, post, routes);
+                    updateProgress(count.incrementAndGet(), posts.size());
+                }
+            });
+        }
+        executorService.shutdown();
+        executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+
+        // Format workbook
+        for (int i = 0; i < 13; ++i) {
+            workbook.getSheetAt(0).autoSizeColumn(i);
+        }
+
+        // Write and return.
+        File output = new File(outputPath(filePath));
+        workbook.write(new FileOutputStream(output));
+
+        return output;
     }
 
     private File queryRoutesAndWriteToExcel(List<Post> posts) throws IOException {
@@ -439,10 +487,15 @@ public class QueryTask extends Task<File> {
 
         updateProgress(0, ids.size());
 
-        List<Post> posts = getPosts(ids);
+        List<Post> posts = new ArrayList<>();
+        if (ids.size() > 4000) {
+            posts = getPostConcurrently(ids);
+        } else {
+            posts = getPosts(ids);
+        }
 
         updateProgress(0, ids.size());
 
-        return queryRoutesAndWriteToExcel(posts);
+        return queryRoutesAndWriteToExcelConcurrently(posts);
     }
 }

@@ -9,6 +9,10 @@ import utils.StringUtils;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class Main extends Application {
+    public static void main(String[] args) {
+        launch(args);
+    }
+
     @Override
     public void start(Stage primaryStage) throws Exception {
         Parent root = FXMLLoader.load(getClass().getResource("main.fxml"));
@@ -18,9 +22,5 @@ public class Main extends Application {
         primaryStage.setTitle(StringUtils.convertToUTF8("邮政小助手"));
         primaryStage.setScene(scene);
         primaryStage.show();
-    }
-
-    public static void main(String[] args) {
-        launch(args);
     }
 }

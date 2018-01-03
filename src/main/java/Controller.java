@@ -46,6 +46,7 @@ public class Controller {
 
     @FXML
     public Button cancelButton;
+    private Task currentTask;
 
     private Optional<ButtonType> showAlert(
         Alert.AlertType type, String title, String header, String message) {
@@ -105,8 +106,6 @@ public class Controller {
         cancelButton.setDisable(true);
     }
 
-    private Task currentTask;
-
     @FXML
     protected void handleSubmitButtonAction(ActionEvent event) {
         if (nameField.getText().isEmpty()) {
@@ -137,8 +136,11 @@ public class Controller {
         Task<File> queryTask = new QueryTask(name, filePath);
         queryTask.setOnCancelled(e -> reset());
         queryTask.setOnSucceeded(e -> {
+            File file = (File) (e.getSource().getValue());
             executeButton.setDisable(false);
             progressIndicator.setVisible(true);
+            showAlert(Alert.AlertType.INFORMATION, StringUtils.convertToUTF8("自动查询成功！"),
+                StringUtils.convertToUTF8("查询结果存储在: " + file.getAbsolutePath()), null);
         });
         queryTask.setOnFailed(e -> {
             showExceptionDialog(e.getSource().getException());

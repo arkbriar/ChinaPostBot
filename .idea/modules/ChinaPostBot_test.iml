@@ -14,7 +14,6 @@
     <orderEntry type="library" name="Gradle: org.apache.httpcomponents:httpclient:4.5.4" level="project" />
     <orderEntry type="library" name="Gradle: org.apache.poi:poi-ooxml:3.17" level="project" />
     <orderEntry type="library" name="Gradle: org.apache.poi:poi:3.17" level="project" />
-    <orderEntry type="library" name="Gradle: io.netty:netty-all:4.1.19.Final" level="project" />
     <orderEntry type="library" name="Gradle: junit:junit:4.12" level="project" />
     <orderEntry type="library" name="Gradle: com.fasterxml.jackson.core:jackson-annotations:2.9.0" level="project" />
     <orderEntry type="library" name="Gradle: com.fasterxml.jackson.core:jackson-core:2.9.3" level="project" />
