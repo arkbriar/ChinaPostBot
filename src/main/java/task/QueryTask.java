@@ -51,9 +51,9 @@ import model.PostRoute;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class QueryTask extends Task<File> {
-    private static final int POST_QUERY_LIMIT = 40;
+    private static final int POST_QUERY_LIMIT = 30;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    private static final int MAX_CONCURRENT_THREADS = 16;
+    private static final int MAX_CONCURRENT_THREADS = 8;
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
     private final String filePath;
@@ -156,6 +156,11 @@ public class QueryTask extends Task<File> {
             } catch (IOException e) {
                 e.printStackTrace();
                 // Try once more
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e1) {
+                    e1.printStackTrace();
+                }
             }
         }
 
@@ -190,6 +195,11 @@ public class QueryTask extends Task<File> {
             } catch (IOException e) {
                 e.printStackTrace();
                 // Try once more
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e1) {
+                    e1.printStackTrace();
+                }
             }
         }
 
