@@ -19,7 +19,7 @@ public class Main extends Application {
 
         Scene scene = new Scene(root, 500, 330);
 
-        primaryStage.setTitle(StringUtils.convertToUTF8("邮政小助手"));
+        primaryStage.setTitle(StringUtils.convertToGBKIfOSisWindows("邮政小助手"));
         primaryStage.setScene(scene);
         primaryStage.show();
     }
