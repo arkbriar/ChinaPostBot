@@ -7,11 +7,17 @@ import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.NameValuePair;
+import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.impl.client.BasicCookieStore;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.protocol.BasicHttpContext;
+import org.apache.http.protocol.HttpContext;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -51,17 +57,28 @@ import model.PostRoute;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class QueryTask extends Task<File> {
-    private static final int POST_QUERY_LIMIT = 30;
+    private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_CONCURRENT_THREADS = 8;
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
     private final String filePath;
-    private HttpClient httpClient = HttpClients.createDefault();
+    private CookieStore cookieStore = new BasicCookieStore();
+    private HttpClient httpClient =
+        HttpClientBuilder.create().setDefaultCookieStore(cookieStore).build();
 
     public QueryTask(String name, String filePath) {
         this.name = name;
         this.filePath = filePath;
+    }
+
+    private String getCookieString() {
+        if (cookieStore != null) {
+            return cookieStore.getCookies().stream()
+                .map(c -> String.format("%s=%s", c.getName(), c.getValue()))
+                .collect(Collectors.joining("; "));
+        }
+        return "";
     }
 
     private List<String> loadFromFile(String filePath) throws IOException, InvalidFormatException {
@@ -89,8 +106,30 @@ public class QueryTask extends Task<File> {
         return ids;
     }
 
+    private HttpResponse doGet(String url) throws IOException {
+        HttpGet httpGet = new HttpGet(url);
+
+        // Set headers
+        httpGet.setHeader("Accept-Encoding", "gzip, deflate");
+        httpGet.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-US;q=0.6");
+        httpGet.setHeader("User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36");
+        httpGet.setHeader("Upgrade-Insecure-Requests", "1");
+        httpGet.setHeader("Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
+        httpGet.setHeader("Cache-Control", "max-age=0");
+        httpGet.setHeader("Connection", "keep-alive");
+
+        return httpClient.execute(httpGet);
+    }
+
+    private void setCookies() throws IOException {
+        doGet("http://yjcx.chinapost.com.cn/zdxt/yjcx");
+    }
+
     private HttpResponse doPost(String url, List<NameValuePair> params) throws IOException {
         HttpPost httpPost = new HttpPost(url);
+
         // Set headers
         httpPost.setHeader("Origin", "http://yjcx.chinapost.com.cn");
         httpPost.setHeader("Accept-Encoding", "gzip, deflate");
@@ -105,12 +144,16 @@ public class QueryTask extends Task<File> {
         httpPost.setHeader("Connection", "keep-alive");
 
         httpPost.setEntity(new UrlEncodedFormEntity(params, "UTF-8"));
-        return httpClient.execute(httpPost);
+
+        // Prepare http context
+        HttpContext context = new BasicHttpContext();
+        context.setAttribute(HttpClientContext.COOKIE_STORE, cookieStore);
+        return httpClient.execute(httpPost, context);
     }
 
     private List<NameValuePair> getPostQueryParams(List<String> ids) {
         String idList =
-            ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining(","));
+            ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining("%2C"));
         List<NameValuePair> params = new ArrayList<>(4);
         params.add(new BasicNameValuePair("vYjhmLst", idList));
         params.add(new BasicNameValuePair("vDzyhbh", ""));
@@ -495,10 +538,18 @@ public class QueryTask extends Task<File> {
             throw new Exception("文件中不存在运单号！");
         }
 
+        try {
+            setCookies();
+        } catch (IOException e) {
+            logger.warning("Could not set cookies! Check your network!");
+            return null;
+        }
+
         updateProgress(0, ids.size());
 
         List<Post> posts;
-        if (ids.size() > 4000) {
+
+        if (ids.size() > 3000) {
             posts = getPostConcurrently(ids);
         } else {
             posts = getPosts(ids);
