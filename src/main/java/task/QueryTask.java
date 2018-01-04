@@ -12,12 +12,9 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.protocol.BasicHttpContext;
-import org.apache.http.protocol.HttpContext;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -31,8 +28,13 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbookType;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutput;
+import java.io.ObjectOutputStream;
 import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -60,25 +62,78 @@ public class QueryTask extends Task<File> {
     private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_CONCURRENT_THREADS = 8;
+    private static CookieStore cookieStore = new BasicCookieStore();
+    private static final HttpClient httpClient =
+        HttpClientBuilder.create().setDefaultCookieStore(cookieStore).build();
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
     private final String filePath;
-    private CookieStore cookieStore = new BasicCookieStore();
-    private HttpClient httpClient =
-        HttpClientBuilder.create().setDefaultCookieStore(cookieStore).build();
+    private final List<ExecutorService> executorServices = new ArrayList<>();
 
     public QueryTask(String name, String filePath) {
         this.name = name;
         this.filePath = filePath;
     }
 
-    private String getCookieString() {
-        if (cookieStore != null) {
-            return cookieStore.getCookies().stream()
-                .map(c -> String.format("%s=%s", c.getName(), c.getValue()))
-                .collect(Collectors.joining("; "));
+    private static String getCookieString() {
+        return cookieStore.getCookies()
+            .stream()
+            .map(c -> String.format("%s=%s", c.getName(), c.getValue()))
+            .collect(Collectors.joining("; "));
+    }
+
+    private static HttpResponse doGet(String url) throws IOException {
+        HttpGet httpGet = new HttpGet(url);
+
+        // Set headers
+        httpGet.setHeader("Accept-Encoding", "gzip, deflate");
+        httpGet.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-US;q=0.6");
+        httpGet.setHeader("User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36");
+        httpGet.setHeader("Upgrade-Insecure-Requests", "1");
+        httpGet.setHeader("Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
+        httpGet.setHeader("Cache-Control", "max-age=0");
+        httpGet.setHeader("Connection", "keep-alive");
+
+        return httpClient.execute(httpGet);
+    }
+
+    public static void loadCookiesFromFile(File file) throws IOException, ClassNotFoundException {
+        try (ObjectInput input = new ObjectInputStream(new FileInputStream(file))) {
+            cookieStore = (CookieStore) input.readObject();
         }
-        return "";
+    }
+
+    public static void saveCookiesToFile(File file) throws IOException {
+        try (ObjectOutput output = new ObjectOutputStream(new FileOutputStream(file))) {
+            output.writeObject(cookieStore);
+        }
+    }
+
+    public static HttpResponse visitMainPage() throws IOException {
+        return doGet("http://yjcx.chinapost.com.cn/zdxt/yjcx");
+    }
+
+    private static HttpResponse doPost(String url, List<NameValuePair> params) throws IOException {
+        HttpPost httpPost = new HttpPost(url);
+
+        // Set headers
+        httpPost.setHeader("Origin", "http://yjcx.chinapost.com.cn");
+        httpPost.setHeader("Accept-Encoding", "gzip, deflate");
+        httpPost.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-US;q=0.6");
+        httpPost.setHeader("User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36");
+        httpPost.setHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        httpPost.setHeader("Accept", "application/json, text/javascript, */*; q=0.01");
+        httpPost.setHeader("Referer",
+            "http://yjcx.chinapost.com.cn/zdxt/jsp/zhdd/gjyjgzcx/gjyjqcgzcx/gjyjqcgzcx_new.jsp");
+        httpPost.setHeader("X-Requested-With", "XMLHttpRequest");
+        httpPost.setHeader("Connection", "keep-alive");
+
+        httpPost.setEntity(new UrlEncodedFormEntity(params, "UTF-8"));
+
+        return httpClient.execute(httpPost);
     }
 
     private List<String> loadFromFile(String filePath) throws IOException, InvalidFormatException {
@@ -106,54 +161,9 @@ public class QueryTask extends Task<File> {
         return ids;
     }
 
-    private HttpResponse doGet(String url) throws IOException {
-        HttpGet httpGet = new HttpGet(url);
-
-        // Set headers
-        httpGet.setHeader("Accept-Encoding", "gzip, deflate");
-        httpGet.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-US;q=0.6");
-        httpGet.setHeader("User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36");
-        httpGet.setHeader("Upgrade-Insecure-Requests", "1");
-        httpGet.setHeader("Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
-        httpGet.setHeader("Cache-Control", "max-age=0");
-        httpGet.setHeader("Connection", "keep-alive");
-
-        return httpClient.execute(httpGet);
-    }
-
-    private void setCookies() throws IOException {
-        doGet("http://yjcx.chinapost.com.cn/zdxt/yjcx");
-    }
-
-    private HttpResponse doPost(String url, List<NameValuePair> params) throws IOException {
-        HttpPost httpPost = new HttpPost(url);
-
-        // Set headers
-        httpPost.setHeader("Origin", "http://yjcx.chinapost.com.cn");
-        httpPost.setHeader("Accept-Encoding", "gzip, deflate");
-        httpPost.setHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-US;q=0.6");
-        httpPost.setHeader("User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36");
-        httpPost.setHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-        httpPost.setHeader("Accept", "application/json, text/javascript, */*; q=0.01");
-        httpPost.setHeader("Referer",
-            "http://yjcx.chinapost.com.cn/zdxt/jsp/zhdd/gjyjgzcx/gjyjqcgzcx/gjyjqcgzcx_new.jsp");
-        httpPost.setHeader("X-Requested-With", "XMLHttpRequest");
-        httpPost.setHeader("Connection", "keep-alive");
-
-        httpPost.setEntity(new UrlEncodedFormEntity(params, "UTF-8"));
-
-        // Prepare http context
-        HttpContext context = new BasicHttpContext();
-        context.setAttribute(HttpClientContext.COOKIE_STORE, cookieStore);
-        return httpClient.execute(httpPost, context);
-    }
-
     private List<NameValuePair> getPostQueryParams(List<String> ids) {
         String idList =
-            ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining("%2C"));
+            ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining(","));
         List<NameValuePair> params = new ArrayList<>(4);
         params.add(new BasicNameValuePair("vYjhmLst", idList));
         params.add(new BasicNameValuePair("vDzyhbh", ""));
@@ -453,8 +463,7 @@ public class QueryTask extends Task<File> {
 
         List<Post> posts = new ArrayList<>(ids.size());
 
-        final ExecutorService executorService =
-            Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
+        final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
             int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
             List<String> subIds = ids.subList(i, i + batchSize);
@@ -466,11 +475,26 @@ public class QueryTask extends Task<File> {
             });
         }
 
-        executorService.shutdown();
-        executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+        shutdownAndAwait(executorService);
 
         assert ids.size() == posts.size();
         return posts;
+    }
+
+    private ExecutorService newExecutorService(int nThreads) {
+        ExecutorService service = Executors.newFixedThreadPool(nThreads);
+        executorServices.add(service);
+        return service;
+    }
+
+    private void removeExecutorService(ExecutorService service) {
+        executorServices.remove(service);
+    }
+
+    private void shutdownAndAwait(ExecutorService service) throws InterruptedException {
+        service.shutdown();
+        service.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+        removeExecutorService(service);
     }
 
     private File queryRoutesAndWriteToExcelConcurrently(List<Post> posts)
@@ -479,7 +503,7 @@ public class QueryTask extends Task<File> {
 
         Workbook workbook = newWorkbook();
 
-        final ExecutorService executorService = Executors.newFixedThreadPool(MAX_CONCURRENT_THREADS);
+        final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
         AtomicInteger count = new AtomicInteger();
         for (Post post : posts) {
             executorService.submit(() -> {
@@ -490,8 +514,7 @@ public class QueryTask extends Task<File> {
                 }
             });
         }
-        executorService.shutdown();
-        executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+        shutdownAndAwait(executorService);
 
         // Format workbook
         for (int i = 0; i < 13; ++i) {
@@ -538,13 +561,6 @@ public class QueryTask extends Task<File> {
             throw new Exception("文件中不存在运单号！");
         }
 
-        try {
-            setCookies();
-        } catch (IOException e) {
-            logger.warning("Could not set cookies! Check your network!");
-            return null;
-        }
-
         updateProgress(0, ids.size());
 
         List<Post> posts;
@@ -558,5 +574,17 @@ public class QueryTask extends Task<File> {
         updateProgress(0, ids.size());
 
         return queryRoutesAndWriteToExcelConcurrently(posts);
+    }
+
+    @Override
+    public boolean cancel(boolean mayInterruptIfRunning) {
+        // Kill all threads started by this task
+        for (ExecutorService executorService : new ArrayList<>(executorServices)) {
+            if (!executorService.isTerminated()) {
+                executorService.shutdownNow();
+            }
+        }
+
+        return super.cancel(mayInterruptIfRunning);
     }
 }

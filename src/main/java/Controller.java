@@ -1,4 +1,8 @@
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Paths;
@@ -26,23 +30,18 @@ import task.QueryTask;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class Controller {
+    public static final String COOKIE_FILE = "cookies.ser";
     private final Logger logger = Logger.getLogger(Controller.class.getName());
-
     @FXML
     public TextField fileLocation;
-
     @FXML
     public TextField nameField;
-
     @FXML
     public ProgressBar progressBar;
-
     @FXML
     public Button executeButton;
-
     @FXML
     public ProgressIndicator progressIndicator;
-
     @FXML
     public Button cancelButton;
     private Task currentTask;
@@ -126,6 +125,38 @@ public class Controller {
         if (result.isPresent() && result.get() != ButtonType.OK) {
             // Exit execution on cancel or close.
             return;
+        }
+
+        // Try loading cookies from disk
+        try {
+            QueryTask.loadCookiesFromFile(new File(COOKIE_FILE));
+        } catch (IOException e) {
+            logger.warning(
+                "Could not load cookies from file, message is " + e.getLocalizedMessage());
+        } catch (ClassNotFoundException e) {
+            logger.warning("Could not load cookies from file, object isn't CookieStore? "
+                + e.getLocalizedMessage());
+        }
+
+        // Check Internet and set cookie
+        try {
+            HttpResponse response = QueryTask.visitMainPage();
+            if (response.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
+                showAlert(Alert.AlertType.ERROR, "邮政网页访问异常！",
+                    "邮政网络访问异常，返回码是" + response.getStatusLine().getStatusCode(), null);
+                return;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            showAlert(Alert.AlertType.ERROR, "网络异常！", "网络异常，请检查你的网络连接！", "");
+            return;
+        }
+
+        // Save cookies to disk
+        try {
+            QueryTask.saveCookiesToFile(new File(COOKIE_FILE));
+        } catch (IOException e) {
+            logger.warning("Could not save cookies to file, " + e.getLocalizedMessage());
         }
 
         reset();
