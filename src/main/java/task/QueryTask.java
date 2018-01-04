@@ -468,8 +468,9 @@ public class QueryTask extends Task<File> {
             int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
             List<String> subIds = ids.subList(i, i + batchSize);
             executorService.submit(() -> {
+                List<Post> postList = queryPosts(subIds);
                 synchronized (posts) {
-                    posts.addAll(queryPosts(subIds));
+                    posts.addAll(postList);
                     updateProgress(posts.size(), ids.size());
                 }
             });
@@ -565,7 +566,7 @@ public class QueryTask extends Task<File> {
 
         List<Post> posts;
 
-        if (ids.size() > 3000) {
+        if (ids.size() > 2000) {
             posts = getPostConcurrently(ids);
         } else {
             posts = getPosts(ids);

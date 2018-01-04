@@ -164,17 +164,22 @@ public class Controller {
         cancelButton.setDisable(false);
 
         Task<File> queryTask = new QueryTask(name, filePath);
+
+        // Reset on failed and cancelled
         queryTask.setOnCancelled(e -> reset());
-        queryTask.setOnSucceeded(e -> {
-            File file = (File) (e.getSource().getValue());
-            executeButton.setDisable(false);
-            progressIndicator.setVisible(true);
-            showAlert(Alert.AlertType.INFORMATION, "自动查询成功！",
-                "查询结果存储在: " + file.getAbsolutePath(), null);
-        });
         queryTask.setOnFailed(e -> {
             showExceptionDialog(e.getSource().getException());
             reset();
+        });
+
+        // Show info alert on succeeded
+        queryTask.setOnSucceeded(e -> {
+            File file = (File) (e.getSource().getValue());
+            executeButton.setDisable(false);
+            cancelButton.setDisable(true);
+            progressIndicator.setVisible(true);
+            showAlert(Alert.AlertType.INFORMATION, "自动查询成功！",
+                "查询结果存储在: " + file.getAbsolutePath(), null);
         });
 
         progressBar.progressProperty().bind(queryTask.progressProperty());
