@@ -480,7 +480,7 @@ public class QueryTask extends Task<File> {
         }
 
         // Cells
-        for (int i = sheet.getFirstRowNum(); i <= sheet.getLastRowNum(); ++i) {
+        for (int i = 1; i <= sheet.getLastRowNum(); ++i) {
             Row row = sheet.getRow(i);
             // Format cell
             for (int j = 0; j < COLUMNS.length; ++j) {
