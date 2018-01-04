@@ -434,7 +434,7 @@ public class QueryTask extends Task<File> {
     }
 
     private void writeToTable(
-        Workbook workbook, Row row, Post post, List<PostRoute> postRoutes) {
+        Workbook workbook, Post post, List<PostRoute> postRoutes) {
         if (post == null || postRoutes == null || postRoutes.isEmpty()) {
             // ignore invalid cases
             return;
@@ -444,6 +444,9 @@ public class QueryTask extends Task<File> {
             logger.info(String.format("Ignore unsuccessful delivery %s!", post.getId()));
             return;
         }
+
+        Sheet sheet = workbook.getSheetAt(0);
+        Row row = sheet.createRow(sheet.getLastRowNum() + 1);
 
         final Calendar calendar = getCalendar();
         row.createCell(0).setCellValue(name);
@@ -566,7 +569,6 @@ public class QueryTask extends Task<File> {
         updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
-        Sheet mainSheet = workbook.getSheetAt(0);
 
         final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
         AtomicInteger count = new AtomicInteger();
@@ -574,8 +576,7 @@ public class QueryTask extends Task<File> {
             executorService.submit(() -> {
                 List<PostRoute> routes = queryPostRoutes(post);
                 synchronized (workbook) {
-                    Row row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
-                    writeToTable(workbook, row, post, routes);
+                    writeToTable(workbook, post, routes);
                 }
                 if (count.get() % 200 == 0) {
                     logger.info("Progress: " + count.get() + "/" + posts.size());
@@ -599,13 +600,11 @@ public class QueryTask extends Task<File> {
         updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
-        Sheet mainSheet = workbook.getSheetAt(0);
 
         for (int i = 0; i < posts.size(); ++i) {
             Post post = posts.get(i);
             List<PostRoute> routes = queryPostRoutes(post);
-            Row row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
-            writeToTable(workbook, row, post, routes);
+            writeToTable(workbook, post, routes);
 
             updateProgress(i + 1, posts.size());
         }
