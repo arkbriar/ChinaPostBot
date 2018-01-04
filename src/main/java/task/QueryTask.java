@@ -573,11 +573,10 @@ public class QueryTask extends Task<File> {
         for (Post post : posts) {
             executorService.submit(() -> {
                 List<PostRoute> routes = queryPostRoutes(post);
-                Row row;
-                synchronized (mainSheet) {
-                    row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
+                synchronized (workbook) {
+                    Row row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
+                    writeToTable(workbook, row, post, routes);
                 }
-                writeToTable(workbook, row, post, routes);
                 if (count.get() % 200 == 0) {
                     logger.info("Progress: " + count.get() + "/" + posts.size());
                 }
