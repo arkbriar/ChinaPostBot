@@ -83,6 +83,10 @@ public class QueryTask extends Task<File> {
     private final String filePath;
     private final List<ExecutorService> executorServices = new ArrayList<>();
     private Font cellFont;
+    private Font cellFontBold;
+    private CellStyle cellStyleCommon;
+    private CellStyle cellStyleDate;
+    private CellStyle cellStyleTitle;
 
     public QueryTask(String name, String filePath) {
         this.name = name;
@@ -288,27 +292,59 @@ public class QueryTask extends Task<File> {
         return Paths.get(file.getParent(), filename.substring(0, idx) + "_结果.xlsx").toString();
     }
 
+    private String getFontName() {
+        String osName = System.getProperty("os.name");
+        switch (osName) {
+            case "Windows":
+                return "楷体";
+            default:
+                return "KaiTi";
+        }
+    }
+
     private Font getDefaultFont(Workbook workbook) {
         if (cellFont == null) {
             cellFont = workbook.createFont();
-            String osName = System.getProperty("os.name");
-            switch (osName) {
-                case "Windows":
-                    cellFont.setFontName("楷体");
-                    break;
-                default:
-                    cellFont.setFontName("KaiTi");
-                    break;
-            }
+            cellFont.setFontName(getFontName());
             cellFont.setFontHeightInPoints((short) 10);
         }
-        return workbook.getFontAt(cellFont.getIndex());
+        return cellFont;
     }
 
-    private CellStyle getDefaultStyle(Workbook workbook) {
-        CellStyle style = workbook.createCellStyle();
-        style.setFont(getDefaultFont(workbook));
-        return style;
+    private Font getDefaultBoldFont(Workbook workbook) {
+        if (cellFontBold == null) {
+            cellFontBold = workbook.createFont();
+            cellFontBold.setFontName(getFontName());
+            cellFontBold.setBold(true);
+            cellFontBold.setFontHeightInPoints((short) 10);
+        }
+        return cellFontBold;
+    }
+
+    private CellStyle getCellStyleDate(Workbook workbook) {
+        if (cellStyleDate == null) {
+            cellStyleDate = workbook.createCellStyle();
+            cellStyleDate.setFont(getDefaultFont(workbook));
+            cellStyleDate.setDataFormat(
+                workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+        }
+        return cellStyleDate;
+    }
+
+    public CellStyle getCellStyleTitle(Workbook workbook) {
+        if (cellStyleTitle == null) {
+            cellStyleTitle = workbook.createCellStyle();
+            cellStyleTitle.setFont(getDefaultBoldFont(workbook));
+        }
+        return cellStyleTitle;
+    }
+
+    private CellStyle getCommonStyle(Workbook workbook) {
+        if (cellStyleCommon == null) {
+            cellStyleCommon = workbook.createCellStyle();
+            cellStyleCommon.setFont(getDefaultFont(workbook));
+        }
+        return cellStyleCommon;
     }
 
     private Workbook newWorkbook() {
@@ -319,15 +355,6 @@ public class QueryTask extends Task<File> {
 
         for (int i = 0; i < COLUMNS.length; ++i) {
             titleRow.createCell(i).setCellValue(COLUMNS[i]);
-        }
-
-        // Set bold
-        CellStyle style = workbook.createCellStyle();
-        Font font = getDefaultFont(workbook);
-        font.setBold(true);
-        style.setFont(font);
-        for (int i = 0; i < COLUMNS.length; ++i) {
-            titleRow.getCell(i).setCellStyle(style);
         }
 
         return workbook;
@@ -443,19 +470,26 @@ public class QueryTask extends Task<File> {
         row.createCell(11).setCellValue("已妥投");
     }
 
-    private void formatSheet(Workbook workbook) {
+    private void formatWorkbook(Workbook workbook) {
         Sheet sheet = workbook.getSheetAt(0);
+
+        // Title
+        Row titleRow = sheet.getRow(0);
+        for (int i = 0; i < COLUMNS.length; ++i) {
+            titleRow.getCell(i).setCellStyle(getCellStyleTitle(workbook));
+        }
+
+        // Cells
         for (int i = sheet.getFirstRowNum(); i <= sheet.getLastRowNum(); ++i) {
             Row row = sheet.getRow(i);
             // Format cell
             for (int j = 0; j < COLUMNS.length; ++j) {
                 Cell cell = row.getCell(j);
-                CellStyle cellStyle = getDefaultStyle(workbook);
                 if (j == 1 || j == 2) {
-                    cellStyle.setDataFormat(
-                        workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+                    cell.setCellStyle(getCellStyleDate(workbook));
+                } else {
+                    cell.setCellStyle(getCommonStyle(workbook));
                 }
-                cell.setCellStyle(cellStyle);
             }
         }
 
@@ -553,7 +587,7 @@ public class QueryTask extends Task<File> {
         shutdownAndAwait(executorService);
 
         // Format workbook
-        formatSheet(workbook);
+        formatWorkbook(workbook);
 
         // Write and return.
         File output = new File(outputPath(filePath));
@@ -578,9 +612,7 @@ public class QueryTask extends Task<File> {
         }
 
         // Format workbook
-        for (int i = 0; i < 13; ++i) {
-            workbook.getSheetAt(0).autoSizeColumn(i);
-        }
+        formatWorkbook(workbook);
 
         // Write and return.
         File output = new File(outputPath(filePath));
