@@ -14,11 +14,11 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -61,14 +61,28 @@ import model.PostRoute;
 public class QueryTask extends Task<File> {
     private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    private static final int MAX_CONCURRENT_THREADS = 8;
+    private static final int MAX_CONCURRENT_THREADS = 20;
+    private static final String[] COLUMNS = {
+        "售后人员", "查询日期", "收寄日期", "客户", "运单号", "收件人",
+        "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"
+    };
+    private static PoolingHttpClientConnectionManager httpClientConnectionManager =
+        new PoolingHttpClientConnectionManager();
     private static CookieStore cookieStore = new BasicCookieStore();
-    private static final HttpClient httpClient =
-        HttpClientBuilder.create().setDefaultCookieStore(cookieStore).build();
+    private static HttpClient httpClient =
+        HttpClientBuilder.create().setDefaultCookieStore(cookieStore)
+            .setConnectionManager(httpClientConnectionManager).build();
+
+    static {
+        httpClientConnectionManager.setDefaultMaxPerRoute(MAX_CONCURRENT_THREADS);
+        httpClientConnectionManager.setMaxTotal(MAX_CONCURRENT_THREADS * 5);
+    }
+
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
     private final String filePath;
     private final List<ExecutorService> executorServices = new ArrayList<>();
+    private Font cellFont;
 
     public QueryTask(String name, String filePath) {
         this.name = name;
@@ -101,7 +115,12 @@ public class QueryTask extends Task<File> {
 
     public static void loadCookiesFromFile(File file) throws IOException, ClassNotFoundException {
         try (ObjectInput input = new ObjectInputStream(new FileInputStream(file))) {
-            cookieStore = (CookieStore) input.readObject();
+            CookieStore cookieStoreLoaded = (CookieStore) input.readObject();
+            if (!cookieStoreLoaded.equals(cookieStore)) {
+                cookieStore = cookieStoreLoaded;
+                httpClient = HttpClientBuilder.create().setDefaultCookieStore(cookieStore)
+                    .setConnectionManager(httpClientConnectionManager).build();
+            }
         }
     }
 
@@ -270,18 +289,20 @@ public class QueryTask extends Task<File> {
     }
 
     private Font getDefaultFont(Workbook workbook) {
-        Font font = workbook.createFont();
-        String osName = System.getProperty("os.name");
-        switch (osName) {
-            case "Windows":
-                font.setFontName("楷体");
-                break;
-            default:
-                font.setFontName("KaiTi");
-                break;
+        if (cellFont == null) {
+            cellFont = workbook.createFont();
+            String osName = System.getProperty("os.name");
+            switch (osName) {
+                case "Windows":
+                    cellFont.setFontName("楷体");
+                    break;
+                default:
+                    cellFont.setFontName("KaiTi");
+                    break;
+            }
+            cellFont.setFontHeightInPoints((short) 10);
         }
-        font.setFontHeightInPoints((short) 10);
-        return font;
+        return workbook.getFontAt(cellFont.getIndex());
     }
 
     private CellStyle getDefaultStyle(Workbook workbook) {
@@ -294,14 +315,10 @@ public class QueryTask extends Task<File> {
         Workbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
         Sheet mainSheet = workbook.createSheet("主动");
 
-        final String[] columns = {
-            "售后人员", "查询日期", "收寄日期", "客户", "运单号", "收件人",
-            "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"
-        };
         Row titleRow = mainSheet.createRow(0);
 
-        for (int i = 0; i < columns.length; ++i) {
-            titleRow.createCell(i).setCellValue(columns[i]);
+        for (int i = 0; i < COLUMNS.length; ++i) {
+            titleRow.createCell(i).setCellValue(COLUMNS[i]);
         }
 
         // Set bold
@@ -309,7 +326,7 @@ public class QueryTask extends Task<File> {
         Font font = getDefaultFont(workbook);
         font.setBold(true);
         style.setFont(font);
-        for (int i = 0; i < columns.length; ++i) {
+        for (int i = 0; i < COLUMNS.length; ++i) {
             titleRow.getCell(i).setCellStyle(style);
         }
 
@@ -344,7 +361,7 @@ public class QueryTask extends Task<File> {
         PostRoute last = postRoutes.get(postRoutes.size() - 1);
         assert last.getType() == PostRoute.RouteType.RECEIPT;
 
-        String name = "";
+        String name;
         // Case 1
         name = getPersonSignedWithRegex("已签收,([^ ;,，；]+).*代收.*", last.getStatus());
         if (!name.isEmpty()) {
@@ -389,7 +406,8 @@ public class QueryTask extends Task<File> {
         return (calendar.get(Calendar.MONTH) + 1) + "/" + calendar.get(Calendar.DATE);
     }
 
-    private void writeToTable(Workbook workbook, Post post, List<PostRoute> postRoutes) {
+    private void writeToTable(
+        Workbook workbook, Row row, Post post, List<PostRoute> postRoutes) {
         if (post == null || postRoutes == null || postRoutes.isEmpty()) {
             // ignore invalid cases
             return;
@@ -400,8 +418,6 @@ public class QueryTask extends Task<File> {
             return;
         }
 
-        final Sheet sheet = workbook.getSheetAt(0);
-        final Row row = sheet.createRow(sheet.getLastRowNum() + 1);
         final Calendar calendar = getCalendar();
         row.createCell(0).setCellValue(name);
         row.createCell(1).setCellValue(calendar);
@@ -425,20 +441,26 @@ public class QueryTask extends Task<File> {
 
         row.createCell(10).setCellValue(getSimpleDateString(calendar) + "，已签收");
         row.createCell(11).setCellValue("已妥投");
+    }
 
-        // Format cell
-        for (int i = 0; i < 12; ++i) {
-            Cell cell = row.getCell(i);
-            CellStyle cellStyle = getDefaultStyle(workbook);
-            if (i == 1 || i == 2) {
-                cellStyle.setDataFormat(
-                    workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+    private void formatSheet(Workbook workbook) {
+        Sheet sheet = workbook.getSheetAt(0);
+        for (int i = sheet.getFirstRowNum(); i <= sheet.getLastRowNum(); ++i) {
+            Row row = sheet.getRow(i);
+            // Format cell
+            for (int j = 0; j < COLUMNS.length; ++j) {
+                Cell cell = row.getCell(j);
+                CellStyle cellStyle = getDefaultStyle(workbook);
+                if (j == 1 || j == 2) {
+                    cellStyle.setDataFormat(
+                        workbook.getCreationHelper().createDataFormat().getFormat("mm月dd日"));
+                }
+                cell.setCellStyle(cellStyle);
             }
-            cell.setCellStyle(cellStyle);
+        }
 
-            if (cell.getCellTypeEnum() == CellType.STRING) {
-                cell.setCellValue(cell.getStringCellValue());
-            }
+        for (int i = 0; i < COLUMNS.length; ++i) {
+            workbook.getSheetAt(0).autoSizeColumn(i);
         }
     }
 
@@ -450,6 +472,10 @@ public class QueryTask extends Task<File> {
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
             int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
             posts.addAll(queryPosts(ids.subList(i, i + batchSize)));
+
+            if ((i + batchSize) % 200 == 0) {
+                logger.info("Progress: " + (i + batchSize) + "/" + ids.size());
+            }
             updateProgress(i + batchSize, ids.size());
         }
 
@@ -471,6 +497,9 @@ public class QueryTask extends Task<File> {
                 List<Post> postList = queryPosts(subIds);
                 synchronized (posts) {
                     posts.addAll(postList);
+                    if (posts.size() % 200 == 0) {
+                        logger.info("Progress: " + posts.size() + "/" + ids.size());
+                    }
                     updateProgress(posts.size(), ids.size());
                 }
             });
@@ -503,24 +532,28 @@ public class QueryTask extends Task<File> {
         updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
+        Sheet mainSheet = workbook.getSheetAt(0);
 
         final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
         AtomicInteger count = new AtomicInteger();
         for (Post post : posts) {
             executorService.submit(() -> {
                 List<PostRoute> routes = queryPostRoutes(post);
-                synchronized (workbook) {
-                    writeToTable(workbook, post, routes);
-                    updateProgress(count.incrementAndGet(), posts.size());
+                Row row;
+                synchronized (mainSheet) {
+                    row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
                 }
+                writeToTable(workbook, row, post, routes);
+                if (count.get() % 200 == 0) {
+                    logger.info("Progress: " + count.get() + "/" + posts.size());
+                }
+                updateProgress(count.incrementAndGet(), posts.size());
             });
         }
         shutdownAndAwait(executorService);
 
         // Format workbook
-        for (int i = 0; i < 13; ++i) {
-            workbook.getSheetAt(0).autoSizeColumn(i);
-        }
+        formatSheet(workbook);
 
         // Write and return.
         File output = new File(outputPath(filePath));
@@ -533,11 +566,13 @@ public class QueryTask extends Task<File> {
         updateMessage("查询运单路线");
 
         Workbook workbook = newWorkbook();
+        Sheet mainSheet = workbook.getSheetAt(0);
 
         for (int i = 0; i < posts.size(); ++i) {
             Post post = posts.get(i);
             List<PostRoute> routes = queryPostRoutes(post);
-            writeToTable(workbook, post, routes);
+            Row row = mainSheet.createRow(mainSheet.getLastRowNum() + 1);
+            writeToTable(workbook, row, post, routes);
 
             updateProgress(i + 1, posts.size());
         }
@@ -566,11 +601,7 @@ public class QueryTask extends Task<File> {
 
         List<Post> posts;
 
-        if (ids.size() > 2000) {
-            posts = getPostConcurrently(ids);
-        } else {
-            posts = getPosts(ids);
-        }
+        posts = getPostConcurrently(ids);
 
         updateProgress(0, ids.size());
 
@@ -585,6 +616,7 @@ public class QueryTask extends Task<File> {
                 executorService.shutdownNow();
             }
         }
+        executorServices.clear();
 
         return super.cancel(mayInterruptIfRunning);
     }
