@@ -484,7 +484,7 @@ public class QueryTask extends Task<File> {
             Row row = sheet.getRow(i);
             // Format cell
             for (int j = 0; j < COLUMNS.length; ++j) {
-                Cell cell = row.getCell(j);
+                Cell cell = row.getCell(j, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                 if (j == 1 || j == 2) {
                     cell.setCellStyle(getCellStyleDate(workbook));
                 } else {
