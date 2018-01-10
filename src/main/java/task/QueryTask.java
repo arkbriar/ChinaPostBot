@@ -24,6 +24,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbookType;
 
@@ -62,16 +63,15 @@ public class QueryTask extends Task<File> {
     private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_CONCURRENT_THREADS = 20;
-    private static final String[] COLUMNS = {
-        "售后人员", "查询日期", "收寄日期", "客户", "运单号", "收件人",
-        "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"
-    };
+    private static final String[] COLUMNS = {"售后人员", "查询日期", "收寄日期", "客户", "运单号",
+        "收件人", "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"};
     private static PoolingHttpClientConnectionManager httpClientConnectionManager =
         new PoolingHttpClientConnectionManager();
     private static CookieStore cookieStore = new BasicCookieStore();
-    private static HttpClient httpClient =
-        HttpClientBuilder.create().setDefaultCookieStore(cookieStore)
-            .setConnectionManager(httpClientConnectionManager).build();
+    private static HttpClient httpClient = HttpClientBuilder.create()
+                                               .setDefaultCookieStore(cookieStore)
+                                               .setConnectionManager(httpClientConnectionManager)
+                                               .build();
 
     static {
         httpClientConnectionManager.setDefaultMaxPerRoute(MAX_CONCURRENT_THREADS);
@@ -122,8 +122,10 @@ public class QueryTask extends Task<File> {
             CookieStore cookieStoreLoaded = (CookieStore) input.readObject();
             if (!cookieStoreLoaded.equals(cookieStore)) {
                 cookieStore = cookieStoreLoaded;
-                httpClient = HttpClientBuilder.create().setDefaultCookieStore(cookieStore)
-                    .setConnectionManager(httpClientConnectionManager).build();
+                httpClient = HttpClientBuilder.create()
+                                 .setDefaultCookieStore(cookieStore)
+                                 .setConnectionManager(httpClientConnectionManager)
+                                 .build();
             }
         }
     }
@@ -348,7 +350,7 @@ public class QueryTask extends Task<File> {
     }
 
     private Workbook newWorkbook() {
-        Workbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
+        XSSFWorkbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
         Sheet mainSheet = workbook.createSheet("主动");
 
         Row titleRow = mainSheet.createRow(0);
@@ -357,7 +359,12 @@ public class QueryTask extends Task<File> {
             titleRow.createCell(i).setCellValue(COLUMNS[i]);
         }
 
-        return workbook;
+        // Format title
+        for (int i = 0; i < COLUMNS.length; ++i) {
+            titleRow.getCell(i).setCellStyle(getCellStyleTitle(workbook));
+        }
+
+        return new SXSSFWorkbook(workbook, 100);
     }
 
     private String getLastArrival(List<PostRoute> postRoutes) {
@@ -433,8 +440,7 @@ public class QueryTask extends Task<File> {
         return (calendar.get(Calendar.MONTH) + 1) + "/" + calendar.get(Calendar.DATE);
     }
 
-    private void writeToTable(
-        Workbook workbook, Post post, List<PostRoute> postRoutes) {
+    private void writeToTable(Workbook workbook, Post post, List<PostRoute> postRoutes) {
         if (post == null || postRoutes == null || postRoutes.isEmpty()) {
             // ignore invalid cases
             return;
@@ -471,30 +477,20 @@ public class QueryTask extends Task<File> {
 
         row.createCell(10).setCellValue(getSimpleDateString(calendar) + "，已签收");
         row.createCell(11).setCellValue("已妥投");
+
+        // Format row
+        for (int j = 0; j < COLUMNS.length; ++j) {
+            Cell cell = row.getCell(j, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+            if (j == 1 || j == 2) {
+                cell.setCellStyle(getCellStyleDate(workbook));
+            } else {
+                cell.setCellStyle(getCommonStyle(workbook));
+            }
+        }
     }
 
     private void formatWorkbook(Workbook workbook) {
         Sheet sheet = workbook.getSheetAt(0);
-
-        // Title
-        Row titleRow = sheet.getRow(0);
-        for (int i = 0; i < COLUMNS.length; ++i) {
-            titleRow.getCell(i).setCellStyle(getCellStyleTitle(workbook));
-        }
-
-        // Cells
-        for (int i = 1; i <= sheet.getLastRowNum(); ++i) {
-            Row row = sheet.getRow(i);
-            // Format cell
-            for (int j = 0; j < COLUMNS.length; ++j) {
-                Cell cell = row.getCell(j, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
-                if (j == 1 || j == 2) {
-                    cell.setCellStyle(getCellStyleDate(workbook));
-                } else {
-                    cell.setCellStyle(getCommonStyle(workbook));
-                }
-            }
-        }
 
         for (int i = 0; i < COLUMNS.length; ++i) {
             workbook.getSheetAt(0).autoSizeColumn(i);
