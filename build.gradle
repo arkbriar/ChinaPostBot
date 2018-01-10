@@ -32,6 +32,9 @@ jfx {
 
     // minimal requirement for jfxNative-task
     vendor = 'SJD'
+
+    // jfxNative
+    jvmArgs = ["-XX:InitialHeapSize=524288000", "-XX:MaxHeapSize=1073741824"]
 }
 
 dependencies {
