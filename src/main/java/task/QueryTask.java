@@ -43,6 +43,8 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -58,7 +60,7 @@ import model.PostRoute;
 public class QueryTask extends Task<File> {
     private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    private static final int MAX_CONCURRENT_THREADS = 20;
+    private static final int MAX_CONCURRENT_THREADS = 25;
     private static final String[] COLUMNS = {"售后人员", "查询日期", "收寄日期", "客户", "运单号",
         "收件人", "联系方式", "地址", "投诉类别", "物流", "答复", "完成状态"};
     private static PoolingHttpClientConnectionManager httpClientConnectionManager =
@@ -522,19 +524,27 @@ public class QueryTask extends Task<File> {
         Workbook workbook = newWorkbook();
 
         // Do it in parallel
-        idSlices.parallelStream().forEach(slice -> {
-            List<Post> posts = queryPosts(slice);
-            posts.parallelStream().forEach(post -> {
-                List<PostRoute> routes = queryPostRoutes(post);
-                synchronized (workbook) {
-                    writeToTable(workbook, post, routes);
+        final ForkJoinPool pool = new ForkJoinPool(MAX_CONCURRENT_THREADS);
+        pool.submit(() -> idSlices.parallelStream().forEach(slice -> {
+                List<Post> posts = queryPosts(slice);
+                try {
+                    pool.submit(() -> posts.parallelStream().forEach(post -> {
+                            List<PostRoute> routes = queryPostRoutes(post);
+                            synchronized (workbook) {
+                                writeToTable(workbook, post, routes);
+                            }
+                            updateProgress(counter.incrementAndGet(), taskMax);
+                            if (counter.get() % 200 == 0) {
+                                logger.info("Progress: " + counter.get() + "/" + taskMax);
+                            }
+                        }))
+                        .get();
+                } catch (InterruptedException | ExecutionException e) {
+                    logger.warning(
+                        "Exception occurs when executing queries: " + e.getLocalizedMessage());
                 }
-                updateProgress(counter.incrementAndGet(), taskMax);
-                if (counter.get() % 200 == 0) {
-                    logger.info("Progress: " + counter.get() + "/" + taskMax);
-                }
-            });
-        });
+            }))
+            .get();
 
         formatWorkbook(workbook);
         // Write and return.
