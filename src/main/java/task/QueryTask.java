@@ -24,6 +24,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.streaming.SXSSFSheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbookType;
@@ -350,8 +351,9 @@ public class QueryTask extends Task<File> {
     }
 
     private Workbook newWorkbook() {
-        XSSFWorkbook workbook = new XSSFWorkbook(XSSFWorkbookType.XLSX);
-        Sheet mainSheet = workbook.createSheet("主动");
+        SXSSFWorkbook workbook = new SXSSFWorkbook(100);
+        SXSSFSheet mainSheet = workbook.createSheet("主动");
+        mainSheet.trackAllColumnsForAutoSizing();
 
         Row titleRow = mainSheet.createRow(0);
 
@@ -364,7 +366,7 @@ public class QueryTask extends Task<File> {
             titleRow.getCell(i).setCellStyle(getCellStyleTitle(workbook));
         }
 
-        return new SXSSFWorkbook(workbook, 100);
+        return workbook;
     }
 
     private String getLastArrival(List<PostRoute> postRoutes) {
