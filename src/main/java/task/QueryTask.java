@@ -26,8 +26,6 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.streaming.SXSSFSheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbookType;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -45,9 +43,6 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -82,12 +77,12 @@ public class QueryTask extends Task<File> {
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
     private final String name;
     private final String filePath;
-    private final List<ExecutorService> executorServices = new ArrayList<>();
     private Font cellFont;
     private Font cellFontBold;
     private CellStyle cellStyleCommon;
     private CellStyle cellStyleDate;
     private CellStyle cellStyleTitle;
+    private int taskMax;
 
     public QueryTask(String name, String filePath) {
         this.name = name;
@@ -499,153 +494,53 @@ public class QueryTask extends Task<File> {
         }
     }
 
-    private List<Post> getPosts(List<String> ids) {
-        updateMessage("查询运单号");
-
-        List<Post> posts = new ArrayList<>(ids.size());
-
+    protected List<List<String>> sliceIds(List<String> ids) {
+        List<List<String>> slices = new ArrayList<>(ids.size() / POST_QUERY_LIMIT + 1);
         for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
-            int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
-            posts.addAll(queryPosts(ids.subList(i, i + batchSize)));
-
-            if ((i + batchSize) % 200 == 0) {
-                logger.info("Progress: " + (i + batchSize) + "/" + ids.size());
-            }
-            updateProgress(i + batchSize, ids.size());
+            slices.add(ids.subList(i, Math.min(i + POST_QUERY_LIMIT, ids.size())));
         }
-
-        assert posts.size() == ids.size();
-
-        return posts;
+        return slices;
     }
 
-    private List<Post> getPostConcurrently(List<String> ids) throws InterruptedException {
-        updateMessage("查询运单号");
-
-        List<Post> posts = new ArrayList<>(ids.size());
-
-        final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
-        for (int i = 0; i < ids.size(); i += POST_QUERY_LIMIT) {
-            int batchSize = Math.min(POST_QUERY_LIMIT, ids.size() - i);
-            List<String> subIds = ids.subList(i, i + batchSize);
-            executorService.submit(() -> {
-                List<Post> postList = queryPosts(subIds);
-                synchronized (posts) {
-                    posts.addAll(postList);
-                    if (posts.size() % 200 == 0) {
-                        logger.info("Progress: " + posts.size() + "/" + ids.size());
-                    }
-                    updateProgress(posts.size(), ids.size());
-                }
-            });
-        }
-
-        shutdownAndAwait(executorService);
-
-        assert ids.size() == posts.size();
-        return posts;
-    }
-
-    private ExecutorService newExecutorService(int nThreads) {
-        ExecutorService service = Executors.newFixedThreadPool(nThreads);
-        executorServices.add(service);
-        return service;
-    }
-
-    private void removeExecutorService(ExecutorService service) {
-        executorServices.remove(service);
-    }
-
-    private void shutdownAndAwait(ExecutorService service) throws InterruptedException {
-        service.shutdown();
-        service.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
-        removeExecutorService(service);
-    }
-
-    private File queryRoutesAndWriteToExcelConcurrently(List<Post> posts)
-        throws IOException, InterruptedException {
-        updateMessage("查询运单路线");
-
-        Workbook workbook = newWorkbook();
-
-        final ExecutorService executorService = newExecutorService(MAX_CONCURRENT_THREADS);
-        AtomicInteger count = new AtomicInteger();
-        for (Post post : posts) {
-            executorService.submit(() -> {
-                List<PostRoute> routes = queryPostRoutes(post);
-                synchronized (workbook) {
-                    writeToTable(workbook, post, routes);
-                }
-                if (count.get() % 200 == 0) {
-                    logger.info("Progress: " + count.get() + "/" + posts.size());
-                }
-                updateProgress(count.incrementAndGet(), posts.size());
-            });
-        }
-        shutdownAndAwait(executorService);
-
-        // Format workbook
-        formatWorkbook(workbook);
-
-        // Write and return.
-        File output = new File(outputPath(filePath));
-        workbook.write(new FileOutputStream(output));
-
-        return output;
-    }
-
-    private File queryRoutesAndWriteToExcel(List<Post> posts) throws IOException {
-        updateMessage("查询运单路线");
-
-        Workbook workbook = newWorkbook();
-
-        for (int i = 0; i < posts.size(); ++i) {
-            Post post = posts.get(i);
-            List<PostRoute> routes = queryPostRoutes(post);
-            writeToTable(workbook, post, routes);
-
-            updateProgress(i + 1, posts.size());
-        }
-
-        // Format workbook
-        formatWorkbook(workbook);
-
-        // Write and return.
-        File output = new File(outputPath(filePath));
-        workbook.write(new FileOutputStream(output));
-
-        return output;
+    protected List<List<String>> loadIds(String filePath)
+        throws IOException, InvalidFormatException {
+        List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
+        taskMax = ids.size();
+        return sliceIds(ids);
     }
 
     @Override
     protected File call() throws Exception {
         // Load and remove duplicates
-        List<String> ids = loadFromFile(filePath).stream().distinct().collect(Collectors.toList());
-        if (ids.isEmpty()) {
+        List<List<String>> idSlices = loadIds(filePath);
+        if (idSlices.isEmpty()) {
             throw new Exception("文件中不存在运单号！");
         }
 
-        updateProgress(0, ids.size());
+        updateProgress(0, taskMax);
+        AtomicInteger counter = new AtomicInteger();
+        Workbook workbook = newWorkbook();
 
-        List<Post> posts;
+        // Do it in parallel
+        idSlices.parallelStream().forEach(slice -> {
+            List<Post> posts = queryPosts(slice);
+            posts.parallelStream().forEach(post -> {
+                List<PostRoute> routes = queryPostRoutes(post);
+                synchronized (workbook) {
+                    writeToTable(workbook, post, routes);
+                }
+                updateProgress(counter.incrementAndGet(), taskMax);
+                if (counter.get() % 200 == 0) {
+                    logger.info("Progress: " + counter.get() + "/" + taskMax);
+                }
+            });
+        });
 
-        posts = getPostConcurrently(ids);
+        formatWorkbook(workbook);
+        // Write and return.
+        File output = new File(outputPath(filePath));
+        workbook.write(new FileOutputStream(output));
 
-        updateProgress(0, ids.size());
-
-        return queryRoutesAndWriteToExcelConcurrently(posts);
-    }
-
-    @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
-        // Kill all threads started by this task
-        for (ExecutorService executorService : new ArrayList<>(executorServices)) {
-            if (!executorService.isTerminated()) {
-                executorService.shutdownNow();
-            }
-        }
-        executorServices.clear();
-
-        return super.cancel(mayInterruptIfRunning);
+        return output;
     }
 }
