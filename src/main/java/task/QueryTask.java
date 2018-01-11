@@ -72,8 +72,8 @@ public class QueryTask extends Task<File> {
                                                .build();
 
     static {
-        httpClientConnectionManager.setDefaultMaxPerRoute(MAX_CONCURRENT_THREADS);
-        httpClientConnectionManager.setMaxTotal(MAX_CONCURRENT_THREADS * 5);
+        httpClientConnectionManager.setDefaultMaxPerRoute(MAX_CONCURRENT_THREADS * 5);
+        httpClientConnectionManager.setMaxTotal(MAX_CONCURRENT_THREADS * 10);
     }
 
     private final Logger logger = Logger.getLogger(QueryTask.class.getName());
