@@ -58,6 +58,7 @@ import model.PostRoute;
  * Created by Shunjie Ding on 31/12/2017.
  */
 public class QueryTask extends Task<File> {
+    public static final String COOKIE_FILE = "cookies.ser";
     private static final int POST_QUERY_LIMIT = 40;
     private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_CONCURRENT_THREADS = 25;
@@ -511,8 +512,42 @@ public class QueryTask extends Task<File> {
         return sliceIds(ids);
     }
 
+    protected void checkNetworkConnection() throws Exception {
+        // Try loading cookies from disk
+        try {
+            QueryTask.loadCookiesFromFile(new File(COOKIE_FILE));
+        } catch (IOException e) {
+            logger.warning(
+                "Could not load cookies from file, message is " + e.getLocalizedMessage());
+        } catch (ClassNotFoundException e) {
+            logger.warning("Could not load cookies from file, object isn't CookieStore? "
+                + e.getLocalizedMessage());
+        }
+
+        // Check Internet and set cookie
+        try {
+            HttpResponse response = QueryTask.visitMainPage();
+            if (response.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
+                throw new IOException(String.format("邮政网页访问异常(%d)!", response.getStatusLine().getStatusCode()));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new IOException("网络异常，请检查你的网络连接！", e);
+        }
+
+        // Save cookies to disk
+        try {
+            QueryTask.saveCookiesToFile(new File(COOKIE_FILE));
+        } catch (IOException e) {
+            logger.warning("Could not save cookies to file, " + e.getLocalizedMessage());
+        }
+    }
+
     @Override
     protected File call() throws Exception {
+
+        checkNetworkConnection();
+
         // Load and remove duplicates
         List<List<String>> idSlices = loadIds(filePath);
         if (idSlices.isEmpty()) {
