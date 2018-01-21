@@ -450,7 +450,7 @@ public class QueryTask extends Task<File> {
     }
 
     private String getPostStatus(Post post, List<PostRoute> postRoutes) {
-        if (postRoutes.get(postRoutes.size() - 1).getType() == PostRoute.RouteType.RECEIPT) {
+        if (isDelivered(postRoutes)) {
             String signedWho = getPersonSigned(postRoutes);
             String deliveryInfo = getLastArrival(postRoutes) + " 已妥投";
             if (!signedWho.isEmpty()) {
