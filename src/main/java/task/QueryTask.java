@@ -440,17 +440,55 @@ public class QueryTask extends Task<File> {
         return (calendar.get(Calendar.MONTH) + 1) + "/" + calendar.get(Calendar.DATE);
     }
 
+    private String getComplaintType(boolean isDelivered) {
+        if (isDelivered) {
+            // successfully delivered
+            return "信息未更新，实际已妥投";
+        } else {
+            return "其他";
+        }
+    }
+
+    private String getPostStatus(Post post, List<PostRoute> postRoutes) {
+        if (postRoutes.get(postRoutes.size() - 1).getType() == PostRoute.RouteType.RECEIPT) {
+            String signedWho = getPersonSigned(postRoutes);
+            String deliveryInfo = getLastArrival(postRoutes) + " 已妥投";
+            if (!signedWho.isEmpty()) {
+                deliveryInfo += "，签收人: " + signedWho;
+            }
+            if (post.getStatus().contains("704")) {
+                deliveryInfo += " 704【转】";
+            }
+            return deliveryInfo;
+        } else {
+            return post.getStatus();
+        }
+    }
+
+    private String getReply(boolean isDelivered, Calendar calendar) {
+        if (isDelivered) {
+            return getSimpleDateString(calendar) + "，已签收";
+        } else {
+            return "";
+        }
+    }
+
+    private String getStatus(boolean isDelivered) {
+        return isDelivered ? "已妥投" : "待处理";
+    }
+
+    private boolean isDelivered(List<PostRoute> postRoutes) {
+        return !postRoutes.isEmpty()
+            && postRoutes.get(postRoutes.size() - 1).getType() == PostRoute.RouteType.RECEIPT;
+    }
+
     private void writeToTable(Workbook workbook, Post post, List<PostRoute> postRoutes) {
         if (post == null || postRoutes == null || postRoutes.isEmpty()) {
             // ignore invalid cases
             return;
         }
 
-        if (postRoutes.get(postRoutes.size() - 1).getType() != PostRoute.RouteType.RECEIPT) {
-            logger.info(String.format("Ignore unsuccessful delivery %s!", post.getId()));
-            return;
-        }
-
+        final boolean isDelivered = isDelivered(postRoutes);
         Sheet sheet = workbook.getSheetAt(0);
         Row row = sheet.createRow(sheet.getLastRowNum() + 1);
 
@@ -463,20 +501,10 @@ public class QueryTask extends Task<File> {
         row.createCell(5).setCellValue("*");
         row.createCell(6).setCellValue("*");
         row.createCell(7).setCellValue(post.getNowLocation());
-        row.createCell(8).setCellValue("信息未更新，实际已妥投");
-
-        String signedWho = getPersonSigned(postRoutes);
-        String deliveryInfo = getLastArrival(postRoutes) + " 已妥投";
-        if (!signedWho.isEmpty()) {
-            deliveryInfo += "，签收人: " + signedWho;
-        }
-        if (post.getStatus().contains("704")) {
-            deliveryInfo += " 704【转】";
-        }
-        row.createCell(9).setCellValue(deliveryInfo);
-
-        row.createCell(10).setCellValue(getSimpleDateString(calendar) + "，已签收");
-        row.createCell(11).setCellValue("已妥投");
+        row.createCell(8).setCellValue(getComplaintType(isDelivered));
+        row.createCell(9).setCellValue(getPostStatus(post, postRoutes));
+        row.createCell(10).setCellValue(getReply(isDelivered, calendar));
+        row.createCell(11).setCellValue(getStatus(isDelivered));
 
         // Format row
         for (int j = 0; j < COLUMNS.length; ++j) {
@@ -528,7 +556,8 @@ public class QueryTask extends Task<File> {
         try {
             HttpResponse response = QueryTask.visitMainPage();
             if (response.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
-                throw new IOException(String.format("邮政网页访问异常(%d)!", response.getStatusLine().getStatusCode()));
+                throw new IOException(String.format(
+                    "邮政网页访问异常(%d)!", response.getStatusLine().getStatusCode()));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -545,7 +574,6 @@ public class QueryTask extends Task<File> {
 
     @Override
     protected File call() throws Exception {
-
         checkNetworkConnection();
 
         // Load and remove duplicates
